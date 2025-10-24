@@ -93,4 +93,4 @@ A estrutura de pastas do projeto está organizada da seguinte forma:
 
 ## 📄 Licença
 
-Este projeto é privado e de propriedade da HemogloVida.
+Este projeto está sob a licença MIT.
