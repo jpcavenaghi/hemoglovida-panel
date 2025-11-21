@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FiUsers,
   FiSend,
@@ -9,36 +9,25 @@ import {
   FiBell,
   FiAlertTriangle
 } from 'react-icons/fi';
+import { db } from '../../services/firebase/config';
+import { collection, onSnapshot, query, limit, orderBy } from 'firebase/firestore';
 
-// --- DADOS DE EXEMPLO (MOCK) ---
-const activitiesBySection = {
-  doadores: [
-    { id: 'd1', type: 'Novo Doador', description: 'Carlos Silva (AB+)', time: '10 min atrás' },
-    { id: 'd2', type: 'Doador Atualizado', description: 'Ana Carolina Silva (Tipo A-)', time: '2 horas atrás' },
-    { id: 'd3', type: 'Doador Inativado', description: 'Fábio Nunes', time: '3 horas atrás' },
-    { id: 'd4', type: 'Novo Doador', description: 'Maria Souza (A+)', time: 'Ontem, 14:20' },
-  ],
-  campanhas: [
-    { id: 'c1', type: 'Campanha Criada', description: 'Urgência O-', time: '45 min atrás' },
-    { id: 'c2', type: 'Campanha Concluída', description: 'Semana da Doação', time: 'Ontem, 17:00' },
-    { id: 'c3', type: 'Alerta Enviado', description: 'Alerta para tipo A-', time: '20/10/2025' },
-  ],
-  agendamentos: [
-    { id: 'a1', type: 'Novo Agendamento', description: 'Daniel Moreira (27/10, 14:00)', time: '1 hora atrás' },
-    { id: 'a2', type: 'Agendamento Cancelado', description: 'Bruno Costa (26/10)', time: 'Ontem, 10:05' },
-    { id: 'a3', type: 'Coleta Realizada', description: 'Carla Dias Souza', time: '19/10/2025' },
-    { id: 'a4', type: 'Agendamento Remarcado', description: 'Eduarda Ferreira (para 31/10)', time: '19/10/2025' },
-  ],
-};
+interface Activity {
+  id: string;
+  type: string;
+  description: string;
+  time: string;
+  rawTimestamp?: any; 
+}
 
-type ActivitySectionKey = keyof typeof activitiesBySection;
+type ActivitySectionKey = 'doadores' | 'campanhas' | 'agendamentos';
 
-const ActivityItem: React.FC<{ activity: { type: string, description: string, time: string } }> = ({ activity }) => {
-  let Icon;
-  let iconBgColor;
-  let iconColor;
+const ActivityItem: React.FC<{ activity: Activity }> = ({ activity }) => {
+  let Icon = FiBell;
+  let iconBgColor = 'bg-gray-100';
+  let iconColor = 'text-gray-600';
 
-  if (activity.type.includes('Doador')) {
+  if (activity.type.includes('Doador') || activity.type.includes('Usuário')) {
     Icon = FiUsers;
     iconBgColor = 'bg-blue-100';
     iconColor = 'text-blue-600';
@@ -50,14 +39,6 @@ const ActivityItem: React.FC<{ activity: { type: string, description: string, ti
     Icon = FiClock;
     iconBgColor = 'bg-purple-100';
     iconColor = 'text-purple-600';
-  } else if (activity.type.includes('Alerta')) {
-    Icon = FiAlertTriangle;
-    iconBgColor = 'bg-yellow-100';
-    iconColor = 'text-yellow-600';
-  } else {
-    Icon = FiBell;
-    iconBgColor = 'bg-gray-100';
-    iconColor = 'text-gray-600';
   }
 
   if (activity.type.includes('Cancelado') || activity.type.includes('Inativado')) {
@@ -68,10 +49,6 @@ const ActivityItem: React.FC<{ activity: { type: string, description: string, ti
     Icon = FiEdit2;
     iconBgColor = 'bg-yellow-100';
     iconColor = 'text-yellow-600';
-  } else if (activity.type.includes('Concluída') || activity.type.includes('Realizada')) {
-    Icon = FiCheckCircle;
-    iconBgColor = 'bg-green-100';
-    iconColor = 'text-green-600';
   }
 
   return (
@@ -92,14 +69,76 @@ const ActivityItem: React.FC<{ activity: { type: string, description: string, ti
   );
 };
 
-
-// --- COMPONENTE PRINCIPAL DA PÁGINA ---
 export default function ActivitiesPage() {
-  // Estado para controlar qual ABA está ativa.
   const [activeSection, setActiveSection] = useState<ActivitySectionKey>('doadores');
+  
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const currentActivities = activitiesBySection[activeSection];
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Data desconhecida';
+    if (dateString.includes('-')) {
+      const parts = dateString.split('-');
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateString;
+  };
 
+  useEffect(() => {
+    setIsLoading(true);
+    let q;
+    let collectionName = '';
+
+    switch (activeSection) {
+      case 'doadores':
+        collectionName = 'users'; 
+        break;
+      case 'campanhas':
+        collectionName = 'campaigns';
+        break;
+      case 'agendamentos':
+        collectionName = 'appointments';
+        break;
+    }
+
+    q = query(collection(db, collectionName), limit(20));
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const fetchedActivities: Activity[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        
+        if (activeSection === 'doadores') {
+          return {
+            id: doc.id,
+            type: 'Novo Doador',
+            description: `${data.nome || 'Usuário'} (${data.tipoSanguineo || '?'})`,
+            time: 'Cadastrado recentemente', 
+          };
+        } 
+        else if (activeSection === 'campanhas') {
+          return {
+            id: doc.id,
+            type: 'Campanha Criada',
+            description: data.name || 'Campanha sem nome',
+            time: formatDate(data.startDate),
+          };
+        } 
+        else {
+          return {
+            id: doc.id,
+            type: data.status === 'Cancelado' ? 'Agendamento Cancelado' : 'Novo Agendamento',
+            description: `${data.patientName || 'Paciente'} (${formatDate(data.date)} às ${data.time})`,
+            time: formatDate(data.date),
+          };
+        }
+      });
+
+      setActivities(fetchedActivities);
+      setIsLoading(false);
+    });
+
+    return () => unsub();
+  }, [activeSection]); 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-gray-800">Atividades Recentes</h1>
@@ -110,10 +149,9 @@ export default function ActivitiesPage() {
             onClick={() => setActiveSection('doadores')}
             className={`
               shrink-0 border-b-2 px-1 py-3 text-sm font-semibold
-              ${
-                activeSection === 'doadores'
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              ${activeSection === 'doadores'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
               }
             `}
           >
@@ -124,10 +162,9 @@ export default function ActivitiesPage() {
             onClick={() => setActiveSection('campanhas')}
             className={`
               shrink-0 border-b-2 px-1 py-3 text-sm font-semibold
-              ${
-                activeSection === 'campanhas'
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              ${activeSection === 'campanhas'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
               }
             `}
           >
@@ -138,10 +175,9 @@ export default function ActivitiesPage() {
             onClick={() => setActiveSection('agendamentos')}
             className={`
               shrink-0 border-b-2 px-1 py-3 text-sm font-semibold
-              ${
-                activeSection === 'agendamentos'
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              ${activeSection === 'agendamentos'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
               }
             `}
           >
@@ -151,15 +187,17 @@ export default function ActivitiesPage() {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
-        {currentActivities.length > 0 ? (
+        {isLoading ? (
+          <p className="p-6 text-center text-gray-500">Carregando atividades...</p>
+        ) : activities.length > 0 ? (
           <ul className="divide-y divide-gray-200 px-6">
-            {currentActivities.map(act => (
+            {activities.map(act => (
               <ActivityItem key={act.id} activity={act} />
             ))}
           </ul>
         ) : (
           <p className="p-6 text-center text-gray-500">
-            Nenhuma atividade nesta seção.
+            Nenhuma atividade encontrada nesta seção.
           </p>
         )}
       </div>

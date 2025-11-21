@@ -1,8 +1,9 @@
-import React from 'react';
-import { FiCalendar, FiUsers, FiSend, FiAlertTriangle, FiPlusCircle, FiDroplet, FiClock, FiList } from 'react-icons/fi';
+import React, { useState, useEffect } from 'react';
+import { FiCalendar, FiUsers, FiSend, FiAlertTriangle, FiDroplet, FiClock } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
+import { db } from '../../services/firebase/config';
+import { collection, getCountFromServer, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 
-// --- COMPONENTE InfoCard ---
 interface InfoCardProps {
   title: string;
   value: string | number;
@@ -12,11 +13,7 @@ interface InfoCardProps {
 }
 
 const InfoCard: React.FC<InfoCardProps> = ({
-  title,
-  value,
-  icon: Icon,
-  iconBgColor = 'bg-gray-100',
-  iconColor = 'text-gray-600'
+  title, value, icon: Icon, iconBgColor = 'bg-gray-100', iconColor = 'text-gray-600'
 }) => (
   <div className="rounded-lg bg-white p-5 shadow-md flex items-center space-x-4">
     <div className={`rounded-full p-3 ${iconBgColor}`}>
@@ -29,53 +26,102 @@ const InfoCard: React.FC<InfoCardProps> = ({
   </div>
 );
 
-// --- COMPONENTE ActionCard ---
-interface ActionCardProps {
-  text: string;
-  icon: React.ElementType;
-  to: string;
-}
-
-const ActionCard: React.FC<ActionCardProps> = ({ text, icon: Icon, to }) => (
-  <Link
-    to={to}
-    className="flex flex-col items-center justify-center rounded-lg bg-red-50 p-6 shadow-md transition duration-150 ease-in-out hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-  >
-    <Icon className="mb-2 text-red-600" size={32} />
-    <p className="text-center font-semibold text-red-700">{text}</p>
-  </Link>
-);
-
-// --- COMPONENTE PRINCIPAL DO DASHBOARD ---
 export default function DashboardHome() {
-  const userName = "Admin"; // Placeholder
+  const userName = "Admin";
 
-  const nextAppointment = "Amanhã, 14:00"; // Dado de exemplo (buscar do Firestore no futuro)
-  
-  // Dados de exemplo movidos para dentro da função
+  const [totalDonors, setTotalDonors] = useState(0);
+  const [activeCampaigns, setActiveCampaigns] = useState(0);
+  const [nextAppointment, setNextAppointment] = useState("Sem agendamentos");
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const urgentNeeds = [
     { type: 'O-', level: 'Crítico', color: 'red-600' },
     { type: 'B-', level: 'Baixo', color: 'yellow-600' },
   ];
 
-  const recentActivity = [
-    { id: 1, type: 'Novo Doador', description: 'Maria Souza (A+)', time: '10 min atrás' },
-    { id: 2, type: 'Campanha Criada', description: 'Urgência O-', time: '1 hora atrás' },
-    { id: 3, type: 'Agendamento', description: 'Carlos Silva (AB+)', time: 'Amanhã, 10:00' },
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+       const donorsSnapshot = await getCountFromServer(collection(db, 'users'));
+        setTotalDonors(donorsSnapshot.data().count); 
+
+        const campaignsSnapshot = await getCountFromServer(collection(db, 'campaigns'));
+        setActiveCampaigns(campaignsSnapshot.data().count);
+        const q = query(
+          collection(db, 'appointments'),
+          orderBy('date', 'asc'), 
+          limit(5)
+        );
+        
+        const appointmentsSnapshot = await getDocs(q);
+        const appointmentsData = appointmentsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        if (appointmentsData.length > 0) {
+          const next = appointmentsData[0] as any;
+          const dateParts = next.date.split('-');
+          const formattedDate = `${dateParts[2]}/${dateParts[1]} às ${next.time}`;
+          setNextAppointment(formattedDate);
+
+          const activities = appointmentsData.map((app: any) => ({
+            id: app.id,
+            type: 'Agendamento',
+            description: `${app.patientName} (${app.date})`,
+            time: app.time
+          }));
+          setRecentActivity(activities);
+        } else {
+          setNextAppointment("Nenhum");
+          setRecentActivity([]);
+        }
+
+      } catch (error) {
+        console.error("Erro ao buscar dados do dashboard:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (isLoading) {
+    return <div className="p-10 text-center text-gray-500">Carregando dashboard...</div>;
+  }
 
   return (
     <div className="space-y-8">
-      {/* Mensagem de Boas-vindas */}
       <h2 className="text-2xl font-bold text-gray-800">
         Seja Bem Vindo(a), {userName}!
       </h2>
 
-      {/* Grid Superior com Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <InfoCard title="Total de Doadores" value="152" icon={FiUsers} iconBgColor="bg-blue-100" iconColor="text-blue-600" />
-        <InfoCard title="Campanhas Ativas" value="3" icon={FiSend} iconBgColor="bg-green-100" iconColor="text-green-600" />
-        <InfoCard title="Tipos Críticos" value={urgentNeeds.map(n => n.type).join(', ')} icon={FiAlertTriangle} iconBgColor="bg-yellow-100" iconColor="text-yellow-600" />
+        <InfoCard 
+          title="Total de Doadores" 
+          value={totalDonors} 
+          icon={FiUsers} 
+          iconBgColor="bg-blue-100" 
+          iconColor="text-blue-600" 
+        />
+        <InfoCard 
+          title="Campanhas Ativas" 
+          value={activeCampaigns} 
+          icon={FiSend} 
+          iconBgColor="bg-green-100" 
+          iconColor="text-green-600" 
+        />
+ 
+        <InfoCard 
+          title="Tipos Críticos" 
+          value={urgentNeeds.length} 
+          icon={FiAlertTriangle} 
+          iconBgColor="bg-yellow-100" 
+          iconColor="text-yellow-600" 
+        />
         <InfoCard
           title="Próximo Agendamento"
           value={nextAppointment} 
@@ -85,67 +131,62 @@ export default function DashboardHome() {
         />
       </div>
 
-  <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
 
-    {/* Coluna 1: Necessidades Urgentes */}
-    <div className="lg:col-span-1">
-      <h3 className="mb-4 text-xl font-semibold text-gray-700">Necessidades Urgentes</h3>
-      <div className="space-y-4 rounded-lg bg-white p-6 shadow-md">
-        {urgentNeeds.length > 0 ? (
-          urgentNeeds.map((need) => (
-            <div key={need.type} className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
-              <div className="flex items-center gap-3">
-                <FiDroplet className={`text-${need.color === 'red-600' ? 'red-600' : 'yellow-600'}`} size={20} />
-                <span className="font-bold text-lg">{need.type}</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${need.level === 'Crítico' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}`}>
-                  {need.level}
-                </span>
-              </div>
-              {/* Lógica do botão Alertar precisa ser implementada */}
-              <button className="rounded-md bg-red-50 px-3 py-1 text-sm font-semibold text-red-600 transition hover:bg-red-100">
-                Alertar
-              </button>
-            </div>
-          ))
-        ) : (
-          <p className="text-center text-gray-500">Nenhuma necessidade urgente.</p>
-        )}
-      </div>
-    </div>
-
-    {/* Coluna 2: Atividade Recente */}
-    <div className="lg:col-span-2">
-      <h3 className="mb-4 text-xl font-semibold text-gray-700">Atividade Recente / Agendamentos</h3>
-      <div className="rounded-lg bg-white p-6 shadow-md">
-        {recentActivity.length > 0 ? (
-          <ul className="space-y-4">
-            {recentActivity.map((activity) => (
-              <li key={activity.id} className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
-                <div className="flex items-center gap-3">
-                  {activity.type === 'Novo Doador' && <FiUsers size={18} className="text-blue-500" />}
-                  {activity.type === 'Campanha Criada' && <FiSend size={18} className="text-green-500" />}
-                  {activity.type === 'Agendamento' && <FiClock size={18} className="text-purple-500" />}
-                  <div>
-                    <p className="font-medium text-gray-800">{activity.type}</p>
-                    <p className="text-sm text-gray-500">{activity.description}</p>
+        <div className="lg:col-span-1">
+          <h3 className="mb-4 text-xl font-semibold text-gray-700">Necessidades Urgentes</h3>
+          <div className="space-y-4 rounded-lg bg-white p-6 shadow-md">
+            {urgentNeeds.length > 0 ? (
+              urgentNeeds.map((need) => (
+                <div key={need.type} className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
+                  <div className="flex items-center gap-3">
+                    <FiDroplet className={`text-${need.color}`} size={20} />
+                    <span className="font-bold text-lg">{need.type}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${need.level === 'Crítico' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                      {need.level}
+                    </span>
                   </div>
+                  <button className="rounded-md bg-red-50 px-3 py-1 text-sm font-semibold text-red-600 transition hover:bg-red-100">
+                    Alertar
+                  </button>
                 </div>
-                <span className="text-xs text-gray-400">{activity.time}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-center text-gray-500">Nenhuma atividade recente.</p>
-        )}
-        <div className="mt-4 text-center">
-          <Link to="/atividades" className="text-sm font-medium text-red-600 hover:underline">
-            Ver todas as atividades
-          </Link>
+              ))
+            ) : (
+              <p className="text-center text-gray-500">Nenhuma necessidade urgente.</p>
+            )}
+          </div>
         </div>
-      </div>
-    </div>
+        
+        <div className="lg:col-span-2">
+          <h3 className="mb-4 text-xl font-semibold text-gray-700">Próximos Agendamentos</h3>
+          <div className="rounded-lg bg-white p-6 shadow-md">
+            {recentActivity.length > 0 ? (
+              <ul className="space-y-4">
+                {recentActivity.map((activity) => (
+                  <li key={activity.id} className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
+                    <div className="flex items-center gap-3">
+                      <FiClock size={18} className="text-purple-500" />
+                      <div>
+                        <p className="font-medium text-gray-800">{activity.type}</p>
+                        <p className="text-sm text-gray-500">{activity.description}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-400">{activity.time}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-center text-gray-500">Nenhum agendamento recente.</p>
+            )}
+            <div className="mt-4 text-center">
+              <Link to="/agendamentos" className="text-sm font-medium text-red-600 hover:underline">
+                Ver todos os agendamentos
+              </Link>
+            </div>
+          </div>
+        </div>
 
-  </div> 
-    </div > 
+      </div> 
+    </div> 
   );
 }
