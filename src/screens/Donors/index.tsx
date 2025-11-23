@@ -5,7 +5,7 @@ import {
   FiEdit2,
   FiTrash2,
   FiLoader,
-  FiX, 
+  FiX,
 } from 'react-icons/fi';
 import { db } from '../../services/firebase/config';
 import {
@@ -17,51 +17,49 @@ import {
   updateDoc
 } from 'firebase/firestore';
 
-// --- INTERFACE DE DADOS ---
 interface Donor {
   id: string;
-  name: string; 
+  name: string;
   email: string;
-  phone: string; 
-  status: 'Ativo' | 'Inativo' | string;
+  phone: string;
+  status: 'Apto' | 'Inapto' | 'Inapto Temporariamente' | 'Inapto Cronicamente' | string;
 }
-
-// Interface para os dados do formulário (bate com os campos do Firestore)
 interface DonorFormData {
   nome: string;
   email: string;
   telefone: string;
-  status: 'Ativo' | 'Inativo' | string;
 }
 
-// --- COMPONENTE INTERNO: StatusPill ---
 const StatusPill: React.FC<{ status: string }> = ({ status }) => {
-  const isActive = status === 'Ativo';
-  const bgColor = isActive ? 'bg-green-100' : 'bg-red-100';
-  const textColor = isActive ? 'text-green-700' : 'text-red-700';
+  const isApto = status === 'Apto' || status === 'Apto para Doar' || status === 'Ativo';
+
+  const bgColor = isApto ? 'bg-green-100' : 'bg-red-100';
+  const textColor = isApto ? 'text-green-700' : 'text-red-700';
+
+  let displayText = status;
+  if (status === 'Ativo') displayText = 'Apto';
+  if (status === 'Inativo') displayText = 'Inapto';
+
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${bgColor} ${textColor}`}>
-      {status}
+      {displayText}
     </span>
   );
 };
 
-
-// --- COMPONENTE INTERNO: MODAL DE DOADOR ---
 interface DonorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: DonorFormData, donorId: string | null) => Promise<void>;
-  donorToEdit: Donor | null; // Passa o doador a ser editado
+  donorToEdit: Donor | null;
 }
 
 const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, donorToEdit }) => {
-  
+
   const [formData, setFormData] = useState<DonorFormData>({
     nome: '',
     email: '',
     telefone: '',
-    status: 'Ativo',
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,27 +69,24 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
   const saveButtonText = isEditMode ? 'Salvar Alterações' : 'Salvar Doador';
 
   useEffect(() => {
-
-    if (isEditMode && isOpen) {
+    if (isEditMode && isOpen && donorToEdit) {
       setFormData({
         nome: donorToEdit.name,
         email: donorToEdit.email,
         telefone: donorToEdit.phone,
-        status: donorToEdit.status,
       });
     } else {
       setFormData({
         nome: '',
         email: '',
         telefone: '',
-        status: 'Ativo',
       });
     }
-  }, [donorToEdit, isOpen]);
+  }, [donorToEdit, isOpen, isEditMode]);
 
   if (!isOpen) return null;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -105,7 +100,7 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
     }
     setIsLoading(true);
     try {
-      await onSave(formData, isEditMode ? donorToEdit.id : null);
+      await onSave(formData, isEditMode && donorToEdit ? donorToEdit.id : null);
       onClose();
     } catch (err) {
       setError('Falha ao salvar. Tente novamente.');
@@ -129,37 +124,33 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
           </button>
         </div>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          {/* Nome */}
           <div>
             <label htmlFor="nome" className="block text-sm font-medium text-gray-700">Nome Completo</label>
             <input type="text" name="nome" id="nome" value={formData.nome} onChange={handleChange} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500" />
           </div>
-          {/* Email */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
             <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500" />
           </div>
-          {/* Telefone */}
           <div>
             <label htmlFor="telefone" className="block text-sm font-medium text-gray-700">Telefone</label>
             <input type="text" name="telefone" id="telefone" value={formData.telefone} onChange={handleChange} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500" />
           </div>
-          {/* Status */}
-          <div>
-            <label htmlFor="status" className="block text-sm font-medium text-gray-700">Status</label>
-            <select name="status" id="status" value={formData.status} onChange={handleChange} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500">
-              <option value="Ativo">Ativo</option>
-              <option value="Inativo">Inativo</option>
-            </select>
-          </div>
+
+          {isEditMode && donorToEdit && (
+            <div className="pt-2">
+              <p className="text-sm text-gray-500">Status atual: <span className="font-semibold text-gray-700">{donorToEdit.status}</span></p>
+              <p className="text-xs text-gray-400">O status é gerenciado automaticamente pelo histórico de doações.</p>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-600">{error}</p>}
-          {/* Botões */}
           <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={handleClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50" disabled={isLoading}>
               Cancelar
             </button>
             <button type="submit" className="flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700" disabled={isLoading}>
-              {isLoading ? <FiLoader className="animate-spin" size={20} /> : saveButtonText} {/* Texto Dinâmico */}
+              {isLoading ? <FiLoader className="animate-spin" size={20} /> : saveButtonText}
             </button>
           </div>
         </form>
@@ -169,7 +160,7 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
 };
 
 
-// --- COMPONENTE PRINCIPAL DA PÁGINA---
+// --- COMPONENTE PRINCIPAL---
 export default function DonorsPage() {
   const [donors, setDonors] = useState<Donor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -182,17 +173,21 @@ export default function DonorsPage() {
   useEffect(() => {
     setIsLoading(true);
     const usersCollectionRef = collection(db, 'users');
+
     const unsubscribe = onSnapshot(usersCollectionRef, (querySnapshot) => {
       const donorsData: Donor[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         if (data.nome) {
+
+          let displayStatus = data.status || 'Apto';
+
           donorsData.push({
             id: doc.id,
             name: data.nome,
             email: data.email,
             phone: data.telefone,
-            status: data.status || 'Inativo',
+            status: displayStatus,
           });
         }
       });
@@ -203,21 +198,25 @@ export default function DonorsPage() {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []); 
+  }, []);
 
-  // --- FUNÇÃO DE SALVAR ATUALIZADA  ---
   const handleSaveDonor = async (data: DonorFormData, donorId: string | null) => {
     try {
       if (donorId) {
-        // MODO EDIÇÃO (Update)
         const donorDocRef = doc(db, 'users', donorId);
-        await updateDoc(donorDocRef, data);
-        console.log("Doador atualizado com sucesso!");
+        await updateDoc(donorDocRef, {
+          nome: data.nome,
+          email: data.email,
+          telefone: data.telefone
+        });
       } else {
-        // MODO ADIÇÃO (Add)
         const usersCollectionRef = collection(db, 'users');
-        await addDoc(usersCollectionRef, data);
-        console.log("Doador adicionado com sucesso!");
+        await addDoc(usersCollectionRef, {
+          ...data,
+          status: 'Apto para Doar',
+          doacoes: 0,
+          vidasSalvas: 0
+        });
       }
     } catch (error) {
       console.error("Erro ao salvar doador: ", error);
@@ -233,7 +232,6 @@ export default function DonorsPage() {
     try {
       const donorDocRef = doc(db, 'users', donorId);
       await deleteDoc(donorDocRef);
-      console.log("Doador excluído com sucesso!");
     } catch (error) {
       console.error("Erro ao excluir doador: ", error);
       alert("Falha ao excluir o doador. Tente novamente.");
@@ -241,12 +239,12 @@ export default function DonorsPage() {
   };
 
   const openAddModal = () => {
-    setCurrentDonor(null); 
+    setCurrentDonor(null);
     setIsModalOpen(true);
   };
 
   const openEditModal = (donor: Donor) => {
-    setCurrentDonor(donor); 
+    setCurrentDonor(donor);
     setIsModalOpen(true);
   };
 
@@ -257,8 +255,11 @@ export default function DonorsPage() {
 
   const filteredDonors = useMemo(() => {
     return donors.filter(donor => {
-      const statusMatch = statusFilter === 'Todos' || donor.status === statusFilter;
-      const searchMatch = searchTerm.trim() === '' || 
+      const statusMatch = statusFilter === 'Todos' ||
+        (statusFilter === 'Apto' && (donor.status === 'Apto' || donor.status === 'Apto para Doar' || donor.status === 'Ativo')) ||
+        (statusFilter === 'Inapto' && (donor.status !== 'Apto' && donor.status !== 'Apto para Doar' && donor.status !== 'Ativo'));
+
+      const searchMatch = searchTerm.trim() === '' ||
         donor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         donor.email.toLowerCase().includes(searchTerm.toLowerCase());
       return statusMatch && searchMatch;
@@ -269,8 +270,8 @@ export default function DonorsPage() {
 
   return (
     <div className="space-y-6">
-      
-      {/* 1. Cabeçalho da Página */}
+
+      {/* Cabeçalho */}
       <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
         <h1 className="text-3xl font-bold text-gray-800">Doadores</h1>
         <div className="text-right">
@@ -280,10 +281,9 @@ export default function DonorsPage() {
         </div>
       </div>
 
-      {/* 2. Barra de Ações */}
       <div className="flex flex-col justify-between gap-3 md:flex-row">
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={openAddModal}
             className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
           >
@@ -291,13 +291,13 @@ export default function DonorsPage() {
             Adicionar Novo
           </button>
         </div>
-        {/* Flyout de Filtro (Sem alterações) */}
+
         <div className="relative">
-          <button 
+          <button
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold shadow-sm transition hover:bg-gray-50
-              ${isFilterActive 
-                ? 'border-red-500 bg-red-50 text-red-600' 
+              ${isFilterActive
+                ? 'border-red-500 bg-red-50 text-red-600'
                 : 'border-gray-300 bg-white text-gray-700'}
             `}
           >
@@ -315,8 +315,8 @@ export default function DonorsPage() {
                 <label htmlFor="statusFilter" className="block text-sm font-medium text-gray-700">Status</label>
                 <select id="statusFilter" name="statusFilter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-red-500 focus:ring-red-500">
                   <option value="Todos">Todos</option>
-                  <option value="Ativo">Ativo</option>
-                  <option value="Inativo">Inativo</option>
+                  <option value="Apto">Apto</option>
+                  <option value="Inapto">Inapto</option>
                 </select>
               </div>
               <div className="mt-4 flex justify-between border-t pt-4">
@@ -356,10 +356,7 @@ export default function DonorsPage() {
             ) : filteredDonors.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-12 text-center text-gray-500">
-                  {isFilterActive
-                    ? "Nenhum doador encontrado com esses filtros."
-                    : "Nenhum doador que preencheu o formulário foi encontrado."
-                  }
+                  {isFilterActive ? "Nenhum doador encontrado com esses filtros." : "Nenhum doador encontrado."}
                 </td>
               </tr>
             ) : (
@@ -371,18 +368,10 @@ export default function DonorsPage() {
                   <td className="whitespace-nowrap px-6 py-4"><StatusPill status={donor.status} /></td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
                     <div className="flex items-center gap-4">
-                      <button 
-                        onClick={() => openEditModal(donor)}
-                        className="text-gray-400 transition hover:text-red-600" 
-                        title="Editar"
-                      >
+                      <button onClick={() => openEditModal(donor)} className="text-gray-400 transition hover:text-red-600" title="Editar">
                         <FiEdit2 size={16} />
                       </button>
-                      <button 
-                        onClick={() => handleDeleteDonor(donor.id)} // ATUALIZADO
-                        className="text-gray-400 transition hover:text-red-600" 
-                        title="Excluir"
-                      >
+                      <button onClick={() => handleDeleteDonor(donor.id)} className="text-gray-400 transition hover:text-red-600" title="Excluir">
                         <FiTrash2 size={16} />
                       </button>
                     </div>
@@ -401,6 +390,6 @@ export default function DonorsPage() {
         donorToEdit={currentDonor}
       />
 
-    </div> 
+    </div>
   );
 }
