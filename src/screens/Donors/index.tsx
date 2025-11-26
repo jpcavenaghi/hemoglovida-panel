@@ -5,7 +5,7 @@ import {
   FiEdit2,
   FiTrash2,
   FiLoader,
-  FiX,
+  FiX, 
 } from 'react-icons/fi';
 import { db } from '../../services/firebase/config';
 import {
@@ -17,25 +17,30 @@ import {
   updateDoc
 } from 'firebase/firestore';
 
+// --- INTERFACE DE DADOS ---
 interface Donor {
   id: string;
-  name: string;
+  name: string; 
   email: string;
-  phone: string;
+  phone: string; 
+  city: string; // 1. Novo Campo
   status: 'Apto' | 'Inapto' | 'Inapto Temporariamente' | 'Inapto Cronicamente' | string;
 }
+
+// Interface para os dados do formulário
 interface DonorFormData {
   nome: string;
   email: string;
   telefone: string;
+  cidade: string; 
 }
 
+// --- COMPONENTE INTERNO: StatusPill ---
 const StatusPill: React.FC<{ status: string }> = ({ status }) => {
   const isApto = status === 'Apto' || status === 'Apto para Doar' || status === 'Ativo';
-
   const bgColor = isApto ? 'bg-green-100' : 'bg-red-100';
   const textColor = isApto ? 'text-green-700' : 'text-red-700';
-
+  
   let displayText = status;
   if (status === 'Ativo') displayText = 'Apto';
   if (status === 'Inativo') displayText = 'Inapto';
@@ -47,19 +52,21 @@ const StatusPill: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
+// --- COMPONENTE INTERNO: MODAL DE DOADOR ---
 interface DonorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: DonorFormData, donorId: string | null) => Promise<void>;
-  donorToEdit: Donor | null;
+  donorToEdit: Donor | null; 
 }
 
 const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, donorToEdit }) => {
-
+  
   const [formData, setFormData] = useState<DonorFormData>({
     nome: '',
     email: '',
     telefone: '',
+    cidade: '', // Inicializa cidade
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,21 +81,34 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
         nome: donorToEdit.name,
         email: donorToEdit.email,
         telefone: donorToEdit.phone,
+        cidade: donorToEdit.city, // Preenche cidade
       });
     } else {
       setFormData({
         nome: '',
         email: '',
         telefone: '',
+        cidade: '',
       });
     }
   }, [donorToEdit, isOpen, isEditMode]);
 
   if (!isOpen) return null;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'telefone') {
+      let text = value.replace(/\D/g, '');
+      if (text.length > 11) text = text.slice(0, 11);
+      if (text.length > 10) text = text.replace(/^(\d{2})(\d{5})(\d{4}).*/, '($1) $2-$3');
+      else if (text.length > 6) text = text.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '($1) $2-$3');
+      else if (text.length > 2) text = text.replace(/^(\d{2})(\d{0,5}).*/, '($1) $2');
+      
+      setFormData(prev => ({ ...prev, [name]: text }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -134,17 +154,33 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
           </div>
           <div>
             <label htmlFor="telefone" className="block text-sm font-medium text-gray-700">Telefone</label>
-            <input type="text" name="telefone" id="telefone" value={formData.telefone} onChange={handleChange} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500" />
+            <input 
+              type="text" 
+              name="telefone" 
+              id="telefone" 
+              value={formData.telefone} 
+              onChange={handleChange}
+              maxLength={15} 
+              placeholder="(11) 99999-9999"
+              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500" 
+            />
+          </div>
+          
+          {/* 3. Novo Input de Cidade */}
+          <div>
+            <label htmlFor="cidade" className="block text-sm font-medium text-gray-700">Cidade</label>
+            <input type="text" name="cidade" id="cidade" value={formData.cidade} onChange={handleChange} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-red-500 focus:ring-red-500" />
           </div>
 
           {isEditMode && donorToEdit && (
-            <div className="pt-2">
-              <p className="text-sm text-gray-500">Status atual: <span className="font-semibold text-gray-700">{donorToEdit.status}</span></p>
-              <p className="text-xs text-gray-400">O status é gerenciado automaticamente pelo histórico de doações.</p>
-            </div>
+             <div className="pt-2">
+               <p className="text-sm text-gray-500">Status atual: <span className="font-semibold text-gray-700">{donorToEdit.status}</span></p>
+               <p className="text-xs text-gray-400">O status é gerenciado automaticamente pelo histórico de doações.</p>
+             </div>
           )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
+          
           <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={handleClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50" disabled={isLoading}>
               Cancelar
@@ -160,7 +196,7 @@ const DonorFormModal: React.FC<DonorModalProps> = ({ isOpen, onClose, onSave, do
 };
 
 
-// --- COMPONENTE PRINCIPAL---
+// --- COMPONENTE PRINCIPAL DA PÁGINA---
 export default function DonorsPage() {
   const [donors, setDonors] = useState<Donor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -173,20 +209,21 @@ export default function DonorsPage() {
   useEffect(() => {
     setIsLoading(true);
     const usersCollectionRef = collection(db, 'users');
-
+    
     const unsubscribe = onSnapshot(usersCollectionRef, (querySnapshot) => {
       const donorsData: Donor[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         if (data.nome) {
-
+          
           let displayStatus = data.status || 'Apto';
-
+          
           donorsData.push({
             id: doc.id,
             name: data.nome,
             email: data.email,
             phone: data.telefone,
+            city: data.cidade || '-',
             status: displayStatus,
           });
         }
@@ -198,24 +235,25 @@ export default function DonorsPage() {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, []); 
 
   const handleSaveDonor = async (data: DonorFormData, donorId: string | null) => {
     try {
       if (donorId) {
         const donorDocRef = doc(db, 'users', donorId);
         await updateDoc(donorDocRef, {
-          nome: data.nome,
-          email: data.email,
-          telefone: data.telefone
+            nome: data.nome,
+            email: data.email,
+            telefone: data.telefone,
+            cidade: data.cidade // Salva cidade
         });
       } else {
         const usersCollectionRef = collection(db, 'users');
         await addDoc(usersCollectionRef, {
-          ...data,
-          status: 'Apto para Doar',
-          doacoes: 0,
-          vidasSalvas: 0
+            ...data,
+            status: 'Apto para Doar',
+            doacoes: 0,
+            vidasSalvas: 0
         });
       }
     } catch (error) {
@@ -239,12 +277,12 @@ export default function DonorsPage() {
   };
 
   const openAddModal = () => {
-    setCurrentDonor(null);
+    setCurrentDonor(null); 
     setIsModalOpen(true);
   };
 
   const openEditModal = (donor: Donor) => {
-    setCurrentDonor(donor);
+    setCurrentDonor(donor); 
     setIsModalOpen(true);
   };
 
@@ -255,13 +293,14 @@ export default function DonorsPage() {
 
   const filteredDonors = useMemo(() => {
     return donors.filter(donor => {
-      const statusMatch = statusFilter === 'Todos' ||
-        (statusFilter === 'Apto' && (donor.status === 'Apto' || donor.status === 'Apto para Doar' || donor.status === 'Ativo')) ||
-        (statusFilter === 'Inapto' && (donor.status !== 'Apto' && donor.status !== 'Apto para Doar' && donor.status !== 'Ativo'));
-
-      const searchMatch = searchTerm.trim() === '' ||
+      const statusMatch = statusFilter === 'Todos' || 
+                          (statusFilter === 'Apto' && (donor.status === 'Apto' || donor.status === 'Apto para Doar' || donor.status === 'Ativo')) ||
+                          (statusFilter === 'Inapto' && (donor.status !== 'Apto' && donor.status !== 'Apto para Doar' && donor.status !== 'Ativo'));
+      
+      const searchMatch = searchTerm.trim() === '' || 
         donor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        donor.email.toLowerCase().includes(searchTerm.toLowerCase());
+        donor.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        donor.city.toLowerCase().includes(searchTerm.toLowerCase()); // Inclui cidade na busca
       return statusMatch && searchMatch;
     });
   }, [donors, searchTerm, statusFilter]);
@@ -270,7 +309,7 @@ export default function DonorsPage() {
 
   return (
     <div className="space-y-6">
-
+      
       {/* Cabeçalho */}
       <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
         <h1 className="text-3xl font-bold text-gray-800">Doadores</h1>
@@ -281,9 +320,10 @@ export default function DonorsPage() {
         </div>
       </div>
 
+      {/* Barra de Ações */}
       <div className="flex flex-col justify-between gap-3 md:flex-row">
         <div className="flex gap-2">
-          <button
+          <button 
             onClick={openAddModal}
             className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
           >
@@ -291,13 +331,13 @@ export default function DonorsPage() {
             Adicionar Novo
           </button>
         </div>
-
+        
         <div className="relative">
-          <button
+          <button 
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold shadow-sm transition hover:bg-gray-50
-              ${isFilterActive
-                ? 'border-red-500 bg-red-50 text-red-600'
+              ${isFilterActive 
+                ? 'border-red-500 bg-red-50 text-red-600' 
                 : 'border-gray-300 bg-white text-gray-700'}
             `}
           >
@@ -308,7 +348,7 @@ export default function DonorsPage() {
             <div className="absolute right-0 top-12 z-20 w-72 rounded-lg border border-gray-200 bg-white p-4 shadow-lg">
               <h4 className="text-base font-semibold text-gray-800">Filtrar Doadores</h4>
               <div className="mt-4">
-                <label htmlFor="search" className="block text-sm font-medium text-gray-700">Nome ou Email</label>
+                <label htmlFor="search" className="block text-sm font-medium text-gray-700">Nome, Email ou Cidade</label>
                 <input type="text" id="search" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar..." className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-red-500 focus:ring-red-500" />
               </div>
               <div className="mt-4">
@@ -339,6 +379,7 @@ export default function DonorsPage() {
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Nome</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Email</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Telefone</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Cidade</th> {/* 4. Nova Coluna */}
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Operações</th>
             </tr>
@@ -346,7 +387,7 @@ export default function DonorsPage() {
           <tbody className="divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center">
+                <td colSpan={6} className="py-12 text-center"> {/* Colspan ajustado */}
                   <div className="flex justify-center items-center gap-2 text-gray-500">
                     <FiLoader className="animate-spin" size={20} />
                     <span className="text-lg">Carregando doadores...</span>
@@ -355,7 +396,7 @@ export default function DonorsPage() {
               </tr>
             ) : filteredDonors.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-gray-500">
+                <td colSpan={6} className="py-12 text-center text-gray-500">
                   {isFilterActive ? "Nenhum doador encontrado com esses filtros." : "Nenhum doador encontrado."}
                 </td>
               </tr>
@@ -365,6 +406,7 @@ export default function DonorsPage() {
                   <td className="whitespace-nowrap px-6 py-4"><div className="text-sm font-medium text-gray-900">{donor.name}</div></td>
                   <td className="whitespace-nowrap px-6 py-4"><div className="text-sm text-gray-600">{donor.email}</div></td>
                   <td className="whitespace-nowrap px-6 py-4"><div className="text-sm text-gray-600">{donor.phone}</div></td>
+                  <td className="whitespace-nowrap px-6 py-4"><div className="text-sm text-gray-600">{donor.city}</div></td> {/* 4. Nova Célula */}
                   <td className="whitespace-nowrap px-6 py-4"><StatusPill status={donor.status} /></td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
                     <div className="flex items-center gap-4">
@@ -390,6 +432,6 @@ export default function DonorsPage() {
         donorToEdit={currentDonor}
       />
 
-    </div>
+    </div> 
   );
 }
